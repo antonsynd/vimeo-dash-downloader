@@ -1,34 +1,52 @@
 #!/usr/bin/env node
 
-//
-//  Expects base64_init=0, i.e. init_segment is an mp4 link
+////////////////////////////////////////////////////////////////////////////////
 //  
+//  vimeo-blob-download.js
+//  Anton Nguyen
+//  
+//  Usage:
+//  	node vimeo-blob-download.js [OPTS] -- MDP_JSON_URL
+//  
+//  Options:
+//  	--debug			Print debug output to stdout
+//  	--concat		Concat segments immediately and do not keep segments
+//  	--output		Output directory for the downloaded files
+//  
+//  Arguments:
+//  	MDP_JSON_URL	With or without base64_init parameter
+//  
+////////////////////////////////////////////////////////////////////////////////
 
 (function()
 {
 	'use strict';
 	
-	var fs = require('fs');
-	var http = require('https');
-	var atob = require('atob');
-	var argv = require('minimist')(process.argv.slice(2),
+	const fs = require('fs');
+	const http = require('http');
+//	const atob = require('atob');
+	const argv = require('minimist')(process.argv.slice(2),
 	{
 		default: {
 			'concat': 'false',
 			'debug': 'false',
 			'base64': 'false',
-			'interval': 250,
+			'output': './'
 		},
 	});
 	
-	const MASTER_PATH = argv._[0];
-	const SEGMENT_DIR = argv._[1];
-	const CONCATENATE_MODE = argv.concat === 'true';
+	const MDP_JSON_URL = argv._[0];
+	const OUTPUT_DIR = argv.output;
+	const CONCAT_MODE = argv.concat === 'true';
 	const DEBUG_MODE = argv.debug === 'true';
 	const BASE64_MODE = argv.base64 === 'true';
-	const REQUEST_INTERVAL = parseInt(argv.interval);
-	var INTERVAL_NUM = NaN;
 	
+	const MDP_JSON_PATH = 'master.json';
+	var videoPath;
+	var baseURL;
+	var videoFile;
+	
+	// The same as console.log, but only runs if DEBUG_MODE
 	function trace()
 	{
 		if (DEBUG_MODE)
@@ -37,27 +55,73 @@
 		}
 	}
 	
-	function __interval__downloadSegment(baseURL, videoURL, segments)
+	function downloadSegments()
 	{
-		var segment = segments.shift();
+		var mdpJSONText = fs.readFileSync(MDP_JSON_PATH, {encoding: 'utf-8'});
+		var mdp;
 		
-		if (segment)
+//		try
+//		{
+			mdp = JSON.parse(mdpJSONText);
+//		}
+//		catch (e)
+//		{
+//			console.error(e);
+//			
+//			process.exit(1);
+//		}
+		
+		for (let i of mdp.video)
 		{
-			downloadSegment(baseURL, videoURL, segment.url);
-		}
-		else
-		{
-			clearInterval(INTERVAL_NUM);
+			videoPath = i.id + '.mp4';
+			
+			if (CONCAT_MODE)
+			{
+				videoFile = fs.createWriteStream(videoPath);
+				videoFile.on('finish', () =>
+				{
+					trace('concatenated segments');
+				});
+			}
+			
+			// TODO
+			if (BASE64_MODE)
+			{
+//				var initSegmentFile = fs.createWriteStream('segment-0.mp4');
+//				initSegmentFile.on('finish', () =>
+//				{
+//					trace('downloaded initial segment');
+//				});
+//
+//				var initSegmentBinary = atob(i.__extern__init_segment);
+//				initSegmentFile.write(initSegmentBinary);
+//				initSegmentFile.end();
+//
+//				if (CONCATENATE_MODE)
+//				{
+//					concatFile.write(initSegmentBinary);
+//				}
+			}
+			else
+			{
+				i.segments.unshift({
+					start: 0,
+					end: 0,
+					url: i.init_segment,
+				});
+				
+				downloadNextSegment(i.id, i.base_url, i.segments);
+			}
 		}
 	}
 	
-	function downloadSegment(baseURL, videoURL, segmentURL)
+	function downloadSegment(id, baseURL, videoURL, segmentURL, callback)
 	{
-		let segmentFile;
+		var segmentFile;
 
-		if (!CONCATENATE_MODE)
+		if (!CONCAT_MODE)
 		{
-			segmentFile = fs.createWriteStream(segmentURL, {autoClose: true}).on('finish', () =>
+			segmentFile = fs.createWriteStream(id + '-' + segmentURL).on('finish', () =>
 			{
 				trace('downloaded ' + segmentURL);
 			});
@@ -65,25 +129,34 @@
 
 		var request = http.get(baseURL + videoURL + segmentURL, (response) =>
 		{
-			response.on('data', (data) =>
+			if (CONCAT_MODE && videoFile)
 			{
-				if (CONCATENATE_MODE && concatFile)
-				{
-					concatFile.write(data);
-				}
-				else
-				{
-					segmentFile.write(data);
-				}
-			}).on('end', (e) =>
+				response.pipe(videoFile, {
+					end: false,
+				});
+			}
+			else
 			{
-				if (CONCATENATE_MODE)
+				response.pipe(segmentFile);
+			}
+			
+			response.on('end', (e) =>
+			{
+				// Don't have to unpipe
+				
+				if (CONCAT_MODE)
 				{
 					trace('concatenated ' + segmentURL);
 				}
 				else
 				{
 					segmentFile.end();
+				}
+				
+				if (callback)
+				{
+					// Usually, a call to retrieve the next segment
+					callback(e);
 				}
 			}).on('error', (e) =>
 			{
@@ -95,57 +168,52 @@
 		});
 	}
 	
-	var masterJSONText = fs.readFileSync(MASTER_PATH, {encoding: 'utf-8'});
-	var master = JSON.parse(masterJSONText);
-	
-	var baseURL = master.__extern__base_url;
-	
-	process.chdir(SEGMENT_DIR);
-	
-	var concatFile;
-	if (CONCATENATE_MODE)
+	function downloadNextSegment(id, videoURL, segments)
 	{
-		concatFile = fs.createWriteStream('video.mp4', {autoClose: true});
-		concatFile.on('finish', () =>
-		{
-			trace('concatenated segments');
-		});
-	}
-	
-	var max = 10;
-	var k = 0;
-	
-	for (let i of master.video)
-	{
-		let videoURL = i.base_url;
+		var segment = segments.shift();
 		
-		if (BASE64_MODE)
+		if (segment)
 		{
-			var initSegmentFile = fs.createWriteStream('segment-0.mp4', {autoClose: true});
-			initSegmentFile.on('finish', () =>
+			downloadSegment(id, baseURL, videoURL, segment.url, (e) =>
 			{
-				trace('downloaded initial segment');
+				downloadNextSegment(id, videoURL, segments);
 			});
-
-			var initSegmentBinary = atob(i.__extern__init_segment);
-			initSegmentFile.write(initSegmentBinary);
-			initSegmentFile.end();
-
-			if (CONCATENATE_MODE)
-			{
-				concatFile.write(initSegmentBinary);
-			}
 		}
 		else
 		{
-			downloadSegment(baseURL, videoURL, i.init_segment);
+			if (CONCAT_MODE && videoFile)
+			{
+				videoFile.end();
+			}
 		}
-		
-//		for (let j of i.segments)
-//		{
-//			downloadSegment(baseURL, videoURL, j);
-//		}
-		
-//		INTERVAL_NUM = setInterval(__interval__downloadSegment, REQUEST_INTERVAL, baseURL, videoURL, i.segments);
 	}
+	
+	// Change the directory
+	process.chdir(OUTPUT_DIR);
+	
+	// Download the MDP JSON file, don't use base64_init=1, and always through http
+	var mdpJSONURL = MDP_JSON_URL.replace(/\?(?:[^=]+?=[^&]+?)*?$/g, '').replace(/^https/g, 'http');
+	baseURL = mdpJSONURL.replace(/video\/(?:\d+,?)+\/.+$/g, '');
+	
+	var mdpJSONFile = fs.createWriteStream(MDP_JSON_PATH, {encoding: 'utf-8'}).on('finish', () =>
+	{
+		trace('downloaded MDP JSON file');
+		downloadSegments();
+	});
+	
+	var mdpJSONRequest = http.get(mdpJSONURL, (response) =>
+	{
+		response.pipe(mdpJSONFile);
+		
+		response.on('end', (e) =>
+		{
+			// Don't have to unpipe
+		}).on('error', (e) =>
+		{
+			console.error(e);
+		});
+	}).on('error', (e) =>
+	{
+		console.error(e);
+	});
 })();
