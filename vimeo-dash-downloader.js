@@ -1,21 +1,40 @@
 #!/usr/bin/env node
 
 ////////////////////////////////////////////////////////////////////////////////
-//  
-//  vimeo-blob-download.js
-//  Anton Nguyen
-//  
-//  Usage:
-//  	node vimeo-blob-download.js [OPTS] -- MDP_JSON_URL
-//  
-//  Options:
-//  	--debug			Print debug output to stdout
-//  	--concat		Concat segments immediately and do not keep segments
-//  	--output		Output directory for the downloaded files
-//  
-//  Arguments:
-//  	MDP_JSON_URL	With or without base64_init parameter
-//  
+//	
+//	vimeo-dash-downloader.js
+//	antonsynd
+//	Downloads Vimeo videos in MPEG-DASH format
+//	
+//	Usage:
+//		node vimeo-dash-downloader.js [OPTS] -- MDP_JSON_URL
+//	
+//	Options:
+//		--debug=true|false	Print debug output to stdout. Default is false
+//		--concat=true|false	If true, concat segments immediately into a file
+//							named "[id].mp4" where [id] is the value of "id" in
+//							the video object. Individual segments are not saved.
+//							If false, saves the individual segments with the
+//							naming scheme "[id]-segment-[segment_id].m4s" except
+//							for the initializer which is an mp4. Default is
+//							false
+//		--output=[string]	Output directory for the downloaded files. Default
+//							is the current working directory
+//	
+//	Arguments:
+//		MDP_JSON_URL		URL of the master.json file. Play the Vimeo video
+//							with the network tab of your browser's web inspector
+//							open and look for "segment-[digit].m4s" requests.
+//  						Find the request URL and select everything up to
+//							the end of /video/[digits]/ (including this 
+//							portion). (With regexes, /^(.+\/video\/\d+\/)/).
+//							Append "master.json" to the end and provide the
+//							whole string as the argument. This JSON file is
+//							saved locally as "master.json"
+//	
+//	Example:
+//		node vimeo-dash-downloader.js --concat=true https://skyfiregce-a.../video/463799389/master.json
+//	
 ////////////////////////////////////////////////////////////////////////////////
 
 (function()
@@ -60,16 +79,16 @@
 		var mdpJSONText = fs.readFileSync(MDP_JSON_PATH, {encoding: 'utf-8'});
 		var mdp;
 		
-//		try
-//		{
+		try
+		{
 			mdp = JSON.parse(mdpJSONText);
-//		}
-//		catch (e)
-//		{
-//			console.error(e);
-//			
-//			process.exit(1);
-//		}
+		}
+		catch (e)
+		{
+			console.error(e);
+			
+			process.exit(1);
+		}
 		
 		for (let i of mdp.video)
 		{
