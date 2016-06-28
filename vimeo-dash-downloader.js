@@ -130,7 +130,6 @@
 				});
 				
 				downloadNextSegment(i.id, 'video/' + i.id + '/' + mdp.base_url, i.segments);
-//				downloadNextSegment(i.id, i.base_url, i.segments);
 			}
 		}
 	}
@@ -138,9 +137,6 @@
 	function downloadSegment(id, baseURL, videoURL, segmentURL, callback)
 	{
 		var segmentFile;
-//		trace('baseURL: ' + baseURL);
-//		trace('videoURL: ' + videoURL);
-//		trace('segmentURL: ' + segmentURL);
 
 		if (!CONCAT_MODE)
 		{
