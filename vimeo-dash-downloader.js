@@ -138,9 +138,9 @@
 	function downloadSegment(id, baseURL, videoURL, segmentURL, callback)
 	{
 		var segmentFile;
-		trace('baseURL: ' + baseURL);
-		trace('videoURL: ' + videoURL);
-		trace('segmentURL: ' + segmentURL);
+//		trace('baseURL: ' + baseURL);
+//		trace('videoURL: ' + videoURL);
+//		trace('segmentURL: ' + segmentURL);
 
 		if (!CONCAT_MODE)
 		{
